@@ -19,7 +19,7 @@ export async function categorizeLead(
 ): Promise<CategorizationResult> {
   const prompt = `You are an AI assistant helping a material brand (flooring, laminates, lighting) categorize sales leads.
 
-Analyze this inquiry and categorize it as HOT, WARM, or COLD:
+Analyze this inquiry and categorize it as HOT, WARM, or COLD.
 
 Lead Details:
 - Name: ${name}
@@ -34,7 +34,7 @@ Categorization Guidelines:
 - WARM: Specific product questions, comparing options, planning phase, genuine interest
 - COLD: General browsing, "just looking", vague inquiry, no clear timeline
 
-Respond in JSON format with:
+Output ONLY raw JSON (no backticks, no markdown, no prose):
 {
   "category": "HOT" | "WARM" | "COLD",
   "confidence": 0.0-1.0,
@@ -56,19 +56,18 @@ Respond in JSON format with:
       prompt,
       maxOutputTokens: 200,
     });
-
-    // Parse the response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON found in response');
+    
+    // Attempt to parse JSON robustly
+    const result = tryParseCategorizationJson(text);
+    if (!result || !result.category) {
+      console.warn('AI response did not contain parsable JSON. Falling back to rule-based categorization. Raw:', text);
+      return ruleBasedCategorizeLead(message);
     }
 
-    const result = JSON.parse(jsonMatch[0]);
-    
     return {
       category: result.category as Category,
-      confidence: result.confidence,
-      reasoning: result.reasoning,
+      confidence: Number(result.confidence ?? 0.7),
+      reasoning: String(result.reasoning ?? 'AI reasoning unavailable'),
     };
   } catch (error) {
     console.error('AI categorization failed:', error);
@@ -111,4 +110,38 @@ function ruleBasedCategorizeLead(message: string): CategorizationResult {
     confidence: 0.6,
     reasoning: 'No strong HOT or COLD signals detected',
   };
+}
+
+// Helper: Robust JSON extraction from model text
+function tryParseCategorizationJson(text: string): any | null {
+  const candidates: string[] = [];
+  const trimmed = text.trim();
+  candidates.push(trimmed);
+
+  // Extract from fenced code blocks ```json ... ``` or ``` ... ```
+  const fenceJson = trimmed.match(/```json[\s\S]*?```/i);
+  if (fenceJson) {
+    candidates.push(fenceJson[0].replace(/```json/i, '').replace(/```$/, '').trim());
+  }
+  const fenceAny = trimmed.match(/```[\s\S]*?```/);
+  if (fenceAny) {
+    candidates.push(fenceAny[0].replace(/```/, '').replace(/```$/, '').trim());
+  }
+
+  // Extract substring between first '{' and last '}'
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(trimmed.substring(firstBrace, lastBrace + 1));
+  }
+
+  for (const c of candidates) {
+    try {
+      const obj = JSON.parse(c);
+      return obj;
+    } catch (_) {
+      // continue
+    }
+  }
+  return null;
 }

@@ -1,4 +1,5 @@
 import { supabase } from './db';
+import sendFollowUpEmail from './email-nodemailer';
 import { addDays } from 'date-fns';
 
 export type Category = 'HOT' | 'WARM' | 'COLD' | 'PENDING';
@@ -116,30 +117,36 @@ export async function sendFollowUp(followUpId: string) {
     throw new Error('Follow-up not found or not approved');
   }
   
-  // In a real app, you would send email here
-  // For demo, we'll just log it
-  console.log(`
-    ===== FOLLOW-UP EMAIL =====
-    To: ${followUp.leads.email}
-    Subject: Following up on your ${followUp.leads.product_interest} inquiry
-    
-    Hi ${followUp.leads.name},
-    
-    ${followUp.message}
-    
-    Best regards,
-    Sales Team
-    ===========================
-  `);
-  
-  // Mark as sent
-  await supabase
-    .from('follow_ups')
-    .update({
-      status: 'SENT',
-      completed_at: new Date().toISOString(),
-    })
-    .eq('id', followUpId);
-  
-  return true;
+  // Send follow-up email using Nodemailer
+  const to = followUp.leads.email as string;
+  const name = followUp.leads.name as string;
+  const subject = `Following up on your ${followUp.leads.product_interest} inquiry`;
+  const message = followUp.message as string;
+
+  try {
+    await sendFollowUpEmail(to, name, subject, message);
+
+    // Mark as sent
+    await supabase
+      .from('follow_ups')
+      .update({
+        status: 'SENT',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', followUpId);
+
+    return true;
+  } catch (err) {
+    console.error('Failed to send follow-up email:', err);
+
+    // Mark as failed (optional)
+    await supabase
+      .from('follow_ups')
+      .update({
+        status: 'FAILED',
+      })
+      .eq('id', followUpId);
+
+    throw err;
+  }
 }
