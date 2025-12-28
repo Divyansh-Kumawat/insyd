@@ -4,7 +4,7 @@ import { supabase } from '@/lib/db';
 export async function GET() {
   try {
     const { data: approvals, error } = await supabase
-      .from('approvals')
+      .from('approvals') 
       .select(`
         *,
         leads(*)

@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('follow_ups')
-      .select(`
+      .select(` 
         *,
         leads(*)
       `)
